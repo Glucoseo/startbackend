@@ -1,0 +1,13 @@
+#POST http://localhost:3000/api/boards Content-Type: application/json
+#{
+#  "title": "Новая доска из консоли",
+#  "owner_id": "77"
+#}
+
+PUT http://localhost:3000/api/boards/4 Content-Type: application/json
+{
+  "title": "обновленный заголовок",
+  "owner_id": "34"
+}
+
+GET http://localhost:3000/api/boards
