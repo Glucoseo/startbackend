@@ -1,43 +1,60 @@
 import express from 'express';
+import { open } from 'sqlite';
+import * as sqlite3 from 'sqlite3';
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
 
-// Имитируем базу данных в памяти сервера
-const mockBoards = [
-  { id: 1, title: "Планы на лето", owner_id: 42 },
-  { id: 2, title: "Изучение TypeScript", owner_id: 42 },
-  { id: 3, title: "Разработка API", owner_id: 99 }
-];
+let db: any;
 
-// Главная страница
+async function initDb() {
+  db = await open({
+    filename: './database.sqlite',
+    driver: sqlite3.Database
+  });
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS boards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      owner_id INTEGER NOT NULL
+    )
+  `);
+
+  console.log("База данных SQLite успешно подключена!");
+}
+
+initDb();
+
 app.get('/', (req, res) => {
   res.send('Корневой маршрут. Попробуй перейти на /api/boards');
 });
 
-// Новый эндпоинт для получения списка всех досок
-app.get('/api/boards', (req, res) => {
-  // Отправляем массив данных в формате JSON
-  res.json(mockBoards);
+app.get('/api/boards', async (req, res) => {
+  const currentBoard = await db.get("SELECT * FROM boards");
+  res.json(currentBoard);
 });
 
-//code writen by myself
-app.get('/api/boards/:id', (req, res) => {
+app.get('/api/boards/:id', async (req, res) => {
   const boardId = Number(req.params.id);
-  const currentBoard = mockBoards.find(board => board.id === boardId);
-  if (currentBoard) {
-      // Если нашли — отдаем эту доску
+
+  try {
+    // Ждем ответа от базы данных через await
+    const currentBoard = await db.get("SELECT * FROM boards WHERE id = ?", [boardId]);
+
+    if (currentBoard) {
       res.json(currentBoard);
     } else {
-      // Если не нашли — отдаем статус ошибки 404 (Не найдено)
       res.status(404).json({ error: "Доска не найдена, бро!" });
     }
+  } catch (error) {
+    res.status(500).json({ error: "Ошибка сервера при поиске доски" });
+  }
 });
 
-// POST запрос на тот же адрес /api/boards
-app.post('/api/boards', (req, res) => {
+app.post('/api/boards', async (req, res) => {
   // Тело запроса (то, что прислал пользователь) лежит в req.body
   const { title, owner_id } = req.body;
 
@@ -47,20 +64,63 @@ app.post('/api/boards', (req, res) => {
     return; // Останавливаем выполнение функции
   }
 
-  // Создаем новый объект доски
-  const newBoard = {
-    id: mockBoards.length + 1, // Генерируем новый ID на основе длины массива
-    title: title,
-    owner_id: Number(owner_id)
-  };
+  try {
+      // Вставляем запись в таблицу.
+      // Знаки '?' — это параметризованный запрос (защищает от SQL-инъекций!)
+      const result = await db.run(
+        'INSERT INTO boards (title, owner_id) VALUES (?, ?)',
+        [title, Number(owner_id)]
+      );
 
-  // Добавляем новинку в наш массив-"базу данных"
-  mockBoards.push(newBoard);
-
-  // Возвращаем созданную доску и статус 201 (Успешно создано)
-  res.status(201).json(newBoard);
+      // result.lastID возвращает ID только что созданной строки
+      res.status(201).json({
+        id: result.lastID,
+        title,
+        owner_id: Number(owner_id)
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Ошибка при создании доски в БД" });
+    }
 });
 
+app.put('/api/boards/:id', async (req, res) => {
+  // Тело запроса (то, что прислал пользователь) лежит в req.body
+  const { title } = req.body;
+  const boardId = Number(req.params.id)
+  // Проверяем, передал ли пользователь обязательные поля
+  if (!title) {
+    res.status(400).json({ error: "Не хватает названия доски!" });
+    return; // Останавливаем выполнение функции
+  }
+
+  try {
+      // Вставляем запись в таблицу.
+      // Знаки '?' — это параметризованный запрос (защищает от SQL-инъекций!)
+      const result = await db.run('UPDATE boards SET title = ? WHERE id = ?',[title, boardId]);
+
+      // 2. Execute the statement by passing variables sequentially
+      //stmt.run( title ,boardId );
+      //const result = db.run(
+      //  'INSERT INTO boards (title, owner_id) VALUES (?, ?)',
+      //  [title, Number(owner_id)]
+      //);
+      const ownerResult = await db.get("SELECT owner_id FROM boards WHERE id = ?", [boardId]);
+      // result.lastID возвращает ID только что созданной строки
+    if (result.changes === 0) {
+      res.status(404).json({ error: "Доска с таким ID не найдена!" })
+    }
+    else {
+      res.status(200).json({
+        id: boardId,
+        title,
+        owner_id: Number(ownerResult.owner_id)
+      });
+    }
+    } catch (error) {
+      res.status(500).json({ error: "Ошибка при изменении доски в БД" });
+  }
+});
+/*
 app.put('/api/boards/:id', (req, res) => {
   const { title } = req.body;
   const boardId = Number(req.params.id)
@@ -80,23 +140,7 @@ app.put('/api/boards/:id', (req, res) => {
   }
 
 });
-
-// DELETE запрос для удаления доски по ID
-app.delete('/api/boards/:id', (req, res) => {
-  const boardId = Number(req.params.id);
-
-  // Ищем индекс доски
-  const boardIndex = mockBoards.findIndex(b => b.id === boardId);
-
-  if (boardIndex !== -1) {
-    // Метод .splice(индекс, сколько_элементов_удалить) вырезает элемент из массива
-    const deletedBoard = mockBoards.splice(boardIndex, 1);
-
-    res.json({ message: "Доска успешно удалена!", board: deletedBoard[0] });
-  } else {
-    res.status(404).json({ error: "Доска с таким ID не найдена!" });
-  }
-});
+*/
 
 app.listen(PORT, () => {
   console.log(`Сервер запущен на http://localhost:${PORT}`);
