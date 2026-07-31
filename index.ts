@@ -84,63 +84,82 @@ app.post('/api/boards', async (req, res) => {
 });
 
 app.put('/api/boards/:id', async (req, res) => {
-  // Тело запроса (то, что прислал пользователь) лежит в req.body
   const { title } = req.body;
-  const boardId = Number(req.params.id)
-  // Проверяем, передал ли пользователь обязательные поля
-  if (!title) {
-    res.status(400).json({ error: "Не хватает названия доски!" });
-    return; // Останавливаем выполнение функции
-  }
+  const boardId = Number(req.params.id);
 
-  try {
-      // Вставляем запись в таблицу.
-      // Знаки '?' — это параметризованный запрос (защищает от SQL-инъекций!)
-      const result = await db.run('UPDATE boards SET title = ? WHERE id = ?',[title, boardId]);
-
-      // 2. Execute the statement by passing variables sequentially
-      //stmt.run( title ,boardId );
-      //const result = db.run(
-      //  'INSERT INTO boards (title, owner_id) VALUES (?, ?)',
-      //  [title, Number(owner_id)]
-      //);
-      const ownerResult = await db.get("SELECT owner_id FROM boards WHERE id = ?", [boardId]);
-      // result.lastID возвращает ID только что созданной строки
-    if (result.changes === 0) {
-      res.status(404).json({ error: "Доска с таким ID не найдена!" })
-    }
-    else {
-      res.status(200).json({
-        id: boardId,
-        title,
-        owner_id: Number(ownerResult.owner_id)
-      });
-    }
-    } catch (error) {
-      res.status(500).json({ error: "Ошибка при изменении доски в БД" });
-  }
-});
-/*
-app.put('/api/boards/:id', (req, res) => {
-  const { title } = req.body;
-  const boardId = Number(req.params.id)
   if (!title) {
     res.status(400).json({ error: "Не хватает названия доски!" });
     return;
   }
 
-  const board = mockBoards.find(b => b.id === boardId);
+  try {
+    const result = await db.run(
+      'UPDATE boards SET title = ? WHERE id = ?',
+      [title, boardId]
+    );
 
-  if (board) {
-    board.title = title
-    res.json({ message: "Доска успешно обновлена!", updatedBoard: board });
-  }
-  else {
-    res.status(404).json({ error: "Доска не найдена, нечего обновлять!" });
-  }
+    // 1. Сначала проверяем, изменилось ли что-то
+    if (result.changes === 0) {
+      res.status(404).json({ error: "Доска с таким ID не найдена!" });
+      return;
+    }
 
+    // 2. Если доска существует, достаем её из БД для красивого ответа
+    const updatedBoard = await db.get("SELECT * FROM boards WHERE id = ?", [boardId]);
+
+    // 3. Отдаем статус 200 и обновленный объект
+    res.status(200).json({
+      message: "Доска успешно обновлена!",
+      board: updatedBoard
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: "Ошибка при изменении доски в БД" });
+  }
 });
-*/
+
+// DELETE запрос для удаления доски по ID
+app.delete('/api/boards/:id', async (req, res) => {
+  const boardId = Number(req.params.id);
+
+  // Ищем индекс доски
+  // const boardIndex = mockBoards.findIndex(b => b.id === boardId);
+
+  if (boardIndex !== -1) {
+    // Метод .splice(индекс, сколько_элементов_удалить) вырезает элемент из массива
+    const deletedBoard = mockBoards.splice(boardIndex, 1);
+
+    res.json({ message: "Доска успешно удалена!", board: deletedBoard[0] });
+  } else {
+    res.status(404).json({ error: "Доска с таким ID не найдена!" });
+  }
+});
+
+app.put('/api/boards/:id', async (req, res) => {
+  const boardId = Number(req.params.id);
+
+  try {
+    const result = await db.run('DELETE FROM boards WHERE id = ?', [boardId])
+
+    // 1. Сначала проверяем, изменилось ли что-то
+    if (result.changes === 0) {
+      res.status(404).json({ error: "Доска с таким ID не найдена!" });
+      return;
+    }
+
+    // 2. Если доска существует, достаем её из БД для красивого ответа
+    const deletedBoard = await db.get("SELECT * FROM boards");
+
+    // 3. Отдаем статус 200 и обновленный объект
+    res.status(200).json({
+      message: "Доска успешно обновлена!",
+      board: deletedBoard
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: "Ошибка при изменении доски в БД" });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Сервер запущен на http://localhost:${PORT}`);
