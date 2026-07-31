@@ -33,7 +33,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/boards', async (req, res) => {
-  const currentBoard = await db.get("SELECT * FROM boards");
+  const currentBoard = await db.all("SELECT * FROM boards");
   res.json(currentBoard);
 });
 
@@ -123,25 +123,25 @@ app.delete('/api/boards/:id', async (req, res) => {
   const boardId = Number(req.params.id);
 
   try {
-    const result = await db.run('DELETE FROM boards WHERE id = ?', [boardId])
+    // 1. Сначала находим доску, которую собираемся удалить, чтобы сохранить её данные
+    const boardToDelete = await db.get("SELECT * FROM boards WHERE id = ?", [boardId]);
 
-    // 1. Сначала проверяем, изменилось ли что-то
-    if (result.changes === 0) {
+    if (!boardToDelete) {
       res.status(404).json({ error: "Доска с таким ID не найдена!" });
       return;
     }
 
-    // 2. Если доска существует, достаем её из БД для красивого ответа
-    const deletedBoard = await db.get("SELECT * FROM boards");
+    // 2. Удаляем её из базы данных
+    await db.run('DELETE FROM boards WHERE id = ?', [boardId]);
 
-    // 3. Отдаем статус 200 и обновленный объект
+    // 3. Возвращаем клиенту сообщение и ту самую удаленную доску
     res.status(200).json({
-      message: "Доска успешно обновлена!",
-      board: deletedBoard
+      message: "Доска успешно удалена!",
+      board: boardToDelete
     });
 
   } catch (error) {
-    res.status(500).json({ error: "Ошибка при изменении доски в БД" });
+    res.status(500).json({ error: "Ошибка при удалении доски из БД" });
   }
 });
 
