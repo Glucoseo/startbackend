@@ -122,22 +122,6 @@ app.put('/api/boards/:id', async (req, res) => {
 app.delete('/api/boards/:id', async (req, res) => {
   const boardId = Number(req.params.id);
 
-  // Ищем индекс доски
-  // const boardIndex = mockBoards.findIndex(b => b.id === boardId);
-
-  if (boardIndex !== -1) {
-    // Метод .splice(индекс, сколько_элементов_удалить) вырезает элемент из массива
-    const deletedBoard = mockBoards.splice(boardIndex, 1);
-
-    res.json({ message: "Доска успешно удалена!", board: deletedBoard[0] });
-  } else {
-    res.status(404).json({ error: "Доска с таким ID не найдена!" });
-  }
-});
-
-app.put('/api/boards/:id', async (req, res) => {
-  const boardId = Number(req.params.id);
-
   try {
     const result = await db.run('DELETE FROM boards WHERE id = ?', [boardId])
 
